@@ -134,6 +134,13 @@ public class AppConfig implements WebMvcConfigurer {
 }
 ````
 
+**NOTA**
+
+> Existe otra manera de configurar el cors y es creando un<br>
+> **@Bean<br>
+> public CorsFilter corsFilter() {...}**<br>
+> Ese tipo de configuración lo realizamos en el curso de **Get Arrays**
+
 ## Creando excepción personalizada
 
 ````java
@@ -149,3 +156,159 @@ public class ApiException extends RuntimeException {
     }
 }
 ````
+
+## Definiendo Entidades y relaciones de Muchos a Muchos
+
+Vamos a trabajar con una relación de `Muchos a Muchos` entre `Author` y `Book`, pero en este proyecto no usaremos la
+anotación `@ManyToMany`, ya que esta anotación nos crea automáticamente una tabla intermedia. En nuestro caso, seremos
+nosotros mismos quienes crearemos la tabla intermedia a través de una entidad mapeada a la base de datos.
+
+### Entidad Author y Book
+
+````java
+
+@AllArgsConstructor
+@NoArgsConstructor
+@Data
+@Builder
+@Entity
+@Table(name = "authors")
+public class Author {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String firstName;
+    private String lastName;
+    @JsonFormat(pattern = "dd/MM/yyyy")
+    private LocalDate birthdate;
+}
+````
+
+````java
+
+@AllArgsConstructor
+@NoArgsConstructor
+@Data
+@Builder
+@Entity
+@Table(name = "books")
+public class Book {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+    private String title;
+    private LocalDate publicationDate;
+    @Builder.Default
+    private Boolean onlineAvailability = false;
+}
+````
+
+### Entidad de relación usando clave primaria compuesta
+
+Es importante recordar que cuando utilizas una entidad de relación como esta, `debes manejar la persistencia de la misma
+manualmente`. **Por ejemplo, cuando guardas una relación entre un book y un author, necesitarás crear una instancia de
+BookAuthor y persistirla en tu contexto de persistencia.**
+
+Primero necesitamos crear nuestra clase `BookAuthorPK`, que será la clase que represente la `clave primaria compuesta`
+para nuestra tabla intermedia.
+
+````java
+
+@AllArgsConstructor
+@NoArgsConstructor
+@Data
+@Builder
+@Embeddable
+public class BookAuthorPK {
+
+    @ManyToOne
+    @JoinColumn(name = "book_id")
+    private Book book;
+
+    @ManyToOne
+    @JoinColumn(name = "author_id")
+    private Author author;
+
+}
+````
+
+**DONDE**
+
+- `@Embeddable`, especifica una clase cuyas instancias se almacenan como parte intrínseca de una entidad propietaria y
+  comparten la identidad de la entidad. Cada una de las propiedades o campos persistentes del objeto incrustado se
+  asigna a la tabla de base de datos de la entidad.
+
+Representamos una `clave primaria compuesta` en Spring Data utilizando la anotación `@Embeddable` en una clase. Luego,
+esta clave se incrusta en la clase de entidad correspondiente de la tabla como clave principal compuesta mediante el uso
+de la anotación `@EmbeddedId` en un campo del tipo `@Embeddable`.
+
+Ahora toca definir la entidad que mapeará a nuestra tabla intermedia donde hacemos uso de la clase `BookAuthorPK`
+creada en el apartado superior:
+
+````java
+
+@AllArgsConstructor
+@NoArgsConstructor
+@Data
+@Builder
+@Entity
+@Table(name = "books_authors")
+public class BookAuthor {
+
+    @EmbeddedId
+    private BookAuthorPK id;
+
+}
+````
+
+**DONDE**
+
+- `@EmbeddedId`, se aplica a un campo persistente o propiedad de una clase de entidad o superclase asignada para indicar
+  una `clave primaria compuesta` que es una clase integrable (`@Embeddable`). La clase integrable debe anotarse
+  como `@Embeddable`. Solo debe haber una anotación `EmbeddedId` y ninguna anotación `Id` cuando se utiliza la anotación
+  `EmbeddedId`.
+
+### Ejecutando la aplicación
+
+Al ejecutar la aplicación veremos el siguiente log en consola:
+
+````bash
+2024-02-20T00:11:50.249-05:00 DEBUG 13320 --- [spring-boot-web-crud] [           main] org.hibernate.SQL                        : 
+    create table authors (
+        id bigint not null auto_increment,
+        birthdate date,
+        first_name varchar(255),
+        last_name varchar(255),
+        primary key (id)
+    ) engine=InnoDB
+2024-02-20T00:11:50.352-05:00 DEBUG 13320 --- [spring-boot-web-crud] [           main] org.hibernate.SQL                        : 
+    create table books (
+        id bigint not null auto_increment,
+        online_availability bit,
+        publication_date date,
+        title varchar(255),
+        primary key (id)
+    ) engine=InnoDB
+2024-02-20T00:11:50.409-05:00 DEBUG 13320 --- [spring-boot-web-crud] [           main] org.hibernate.SQL                        : 
+    create table books_authors (
+        author_id bigint not null,
+        book_id bigint not null,
+        primary key (author_id, book_id)
+    ) engine=InnoDB
+2024-02-20T00:11:50.464-05:00 DEBUG 13320 --- [spring-boot-web-crud] [           main] org.hibernate.SQL                        : 
+    alter table books_authors 
+       add constraint FK3qua08pjd1ca1fe2x5cgohuu5 
+       foreign key (author_id) 
+       references authors (id)
+2024-02-20T00:11:50.583-05:00 DEBUG 13320 --- [spring-boot-web-crud] [           main] org.hibernate.SQL                        : 
+    alter table books_authors 
+       add constraint FK1b933slgixbjdslgwu888m34v 
+       foreign key (book_id) 
+       references books (id)
+````
+
+Y si usamos `DBeaver` para ver el diagrama en la base de datos, veremos que las tablas y sus relaciones se han
+creado correctamente:
+
+![database relationship](./assets/01.database-relationship.png)
+
