@@ -1,6 +1,5 @@
 package dev.magadiflo.springbootwebcrud.persistence.entity;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -25,6 +24,5 @@ public class Author {
     private Long id;
     private String firstName;
     private String lastName;
-    @JsonFormat(pattern = "dd/MM/yyyy")
     private LocalDate birthdate;
 }

@@ -7,12 +7,13 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+
 public interface IBookProjection {
     Long getId();
 
     String getTitle();
 
-    @JsonFormat(pattern = "dd-MM-yyyy")
+    @JsonFormat(pattern = "dd/MM/yyyy")
     LocalDate getPublicationDate();
 
     Boolean getOnlineAvailability();

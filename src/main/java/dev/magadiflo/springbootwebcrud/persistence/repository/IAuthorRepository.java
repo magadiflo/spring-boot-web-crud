@@ -8,13 +8,25 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.PagingAndSortingRepository;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface IAuthorRepository extends PagingAndSortingRepository<Author, Long> {
 
     /**
+     * @param ids de los autores
+     * @return cantidad de autores encontrados por su id
+     */
+    @Query(value = """
+            SELECT COUNT(a.id) AS count
+            FROM authors a
+            WHERE a.id IN(:authorsId)
+            """, nativeQuery = true)
+    Integer countAuthorsByIds(@Param("authorsId") List<Long> ids);
+
+    /**
      * @param id, es el id del author
-     * @return IAuthorProjection, interfaz donde se definieron métodos correspondientes a los campos
+     * @return Optional<IAuthorProjection>, interfaz donde se definieron métodos correspondientes a los campos
      * devueltos en el select. (Ver tema de Projections)
      */
     @Query(value = """

@@ -32,7 +32,7 @@ Tutorial tomado del canal de **Joas Dev**
     <dependency>
         <groupId>org.modelmapper</groupId>
         <artifactId>modelmapper</artifactId>
-        <version>3.0.0</version>
+        <version>3.2.0</version>
     </dependency>
     <dependency>
         <groupId>org.springframework.boot</groupId>
@@ -129,7 +129,11 @@ public class AppConfig implements WebMvcConfigurer {
 
     @Bean
     public ModelMapper modelMapper() {
-        return new ModelMapper();
+        ModelMapper modelMapper = new ModelMapper();
+        modelMapper.getConfiguration()
+                .setFieldMatchingEnabled(true)
+                .setFieldAccessLevel(org.modelmapper.config.Configuration.AccessLevel.PRIVATE);
+        return modelMapper;
     }
 }
 ````
@@ -140,6 +144,49 @@ public class AppConfig implements WebMvcConfigurer {
 > **@Bean<br>
 > public CorsFilter corsFilter() {...}**<br>
 > Ese tipo de configuración lo realizamos en el curso de **Get Arrays**
+
+Sobre la definición del `@Bean ModelMapper`, normalmente el `@Bean` solo regresaría el objeto sin ninguna configuración
+adicional, es decir, sería de la siguiente manera:
+
+````java
+
+@Bean
+public ModelMapper modelMapper() {
+    return new ModelMapper();
+}
+````
+
+Ahora, observamos que en la definición que realicé del `@Bean ModelMapper` de la clase `AppConfig` agregué
+configuraciones adicionales **¿por qué?**, porque cuando realicé pruebas, con las entidades, repositorios y servicios
+construidos, al momento de realizar el mapeo entre un DTO y una Entidad, estas no se poblaban, es decir los campos
+de la entidad destino siempre terminaban siendo `null`. Entonces, buscando la solución encontré que debería agregar
+dichas configuraciones extras:
+
+````java
+
+@Bean
+public ModelMapper modelMapper() {
+    ModelMapper modelMapper = new ModelMapper();
+    modelMapper.getConfiguration()
+            .setFieldMatchingEnabled(true)
+            .setFieldAccessLevel(org.modelmapper.config.Configuration.AccessLevel.PRIVATE);
+    return modelMapper;
+}
+````
+
+**DONDE**
+
+- `modelMapper.getConfiguration()`: Este método obtiene la configuración actual de ModelMapper. La configuración es
+  donde se pueden establecer varias opciones y ajustes para controlar el comportamiento de ModelMapper.
+
+- `.setFieldMatchingEnabled(true)`: Esta línea **habilita la coincidencia de campos.** Cuando está habilitada,
+  **ModelMapper intentará mapear campos con nombres similares automáticamente.** Por ejemplo, si tienes un campo llamado
+  `firstName` en la clase de origen y un campo llamado `firstName` en la clase de destino, ModelMapper los mapeará
+  automáticamente.
+- `.setFieldAccessLevel(org.modelmapper.config.Configuration.AccessLevel.PRIVATE)`: Esto establece el nivel de acceso a
+  los campos. Aquí, estás configurando ModelMapper para que pueda acceder a campos privados durante el mapeo. Esto
+  significa que ModelMapper puede acceder a campos privados de las clases que estás mapeando, lo que es útil si tienes
+  campos privados en tus clases que necesitas mapear.
 
 ## Creando excepción personalizada
 
@@ -179,7 +226,6 @@ public class Author {
     private Long id;
     private String firstName;
     private String lastName;
-    @JsonFormat(pattern = "dd/MM/yyyy")
     private LocalDate birthdate;
 }
 ````
@@ -346,8 +392,19 @@ A continuación se muestra la interfaz `IAuthorRepository` junto a las consultas
 public interface IAuthorRepository extends PagingAndSortingRepository<Author, Long> {
 
     /**
+     * @param ids de los autores
+     * @return cantidad de autores encontrados por su id
+     */
+    @Query(value = """
+            SELECT COUNT(a.id) AS count
+            FROM authors a
+            WHERE a.id IN(:authorsId)
+            """, nativeQuery = true)
+    Integer countAuthorsByIds(@Param("authorsId") List<Long> ids);
+
+    /**
      * @param id, es el id del author
-     * @return IAuthorProjection, interfaz donde se definieron métodos correspondientes a los campos
+     * @return Optional<IAuthorProjection>, interfaz donde se definieron métodos correspondientes a los campos
      * devueltos en el select. (Ver tema de Projections)
      */
     @Query(value = """
@@ -554,7 +611,7 @@ public interface IAuthorProjection {
 
     String getFullName();
 
-    @JsonFormat(pattern = "dd-MM-yyyy")
+    @JsonFormat(pattern = "dd/MM/yyyy")
     LocalDate getBirthdate();
 }
 ````
@@ -562,7 +619,7 @@ public interface IAuthorProjection {
 El objetivo de crear una proyección es limitar el número de columnas que deseamos obtener al momento de hacer la
 consulta, de esa manera evitamos que una consulta `SELECT` nos traiga todas las columnas correspondientes a una entidad.
 
-**IMPORTANTE**
+**IMPORTANTE 01**
 
 > En esta oportunidad, a modo de ejemplo, creamos la proyección `IAuthorProjection` con todos los campos que deseamos
 > recibir, eso significa que en la consulta `SELECT` debemos retornar cada uno de esos campos. Aunque en esta proyección
@@ -573,6 +630,31 @@ consulta, de esa manera evitamos que una consulta `SELECT` nos traiga todas las 
 > en la entidad `Author`, ese método estará mapeado dentro de la consulta `SELECT` a un campo calculado, que en nuestro
 > ejemplo sería al siguiente:<br>
 > `CONCAT(a.first_name, ' ' , a.last_name) AS fullName`
+
+**IMPORTANTE 02**
+
+> Otro punto importante aquí es el uso de la anotación `@JsonFormat(pattern = "dd/MM/yyyy")`. Es una anotación de
+> propósito general utilizada para configurar detalles de cómo se serializarán los valores de las propiedades.
+>
+> La anotación `@JsonFormat(pattern = "dd/MM/yyyy")` en Java es específica de la `serialización y deserialización` de
+> objetos JSON utilizando la biblioteca Jackson. Por lo tanto, su uso está relacionado con la forma en que Jackson
+> maneja la conversión entre objetos Java y JSON.
+>
+> A continuación se muestra los casos en las que la anotación `@JsonFormat` tendrían efecto. Suponiendo que estamos
+> trabajando con una entidad llamada `Author` que tiene un campo de tipo fecha llamado `birthdate` con la anotación
+> `@JsonFormat(pattern = "dd/MM/yyyy")`:
+>
+> 1. `Enviar como respuesta JSON`: Cuando serializas la entidad Author a JSON como parte de la respuesta desde un
+     endpoint hacia un cliente web, Jackson utiliza la anotación @JsonFormat para formatear el campo birthdate según el
+     patrón especificado. Esto garantiza que la fecha se envíe al cliente en el formato deseado.
+> 2. `Recibir JSON en un endpoint`: Cuando recibes datos JSON en tu endpoint y deseas convertirlos a objetos Java,
+     Jackson utiliza la anotación @JsonFormat para deserializar el campo birthdate del JSON según el patrón
+     especificado. Esto garantiza que Jackson interprete correctamente la fecha proporcionada en el JSON.
+>
+> Ahora, en nuestro caso, únicamente anotaremos con `@JsonFormat(pattern = "dd/MM/yyyy")` los campos de tipo fecha de
+> aquellas clases de tipo `DTO` o `Projections`, **pues estas clases las usaremos para poder enviar o recibir datos
+> desde nuestros endpoints al cliente (viceversa).** No usaremos esta anotación en las clases de entidad, ya que por
+> buenas prácticas, las clases de entidad nunca deberían ser usadas para definir el tipo de respuesta de los endpoints.
 
 ### IBookAuthorRepository
 
@@ -604,7 +686,7 @@ public interface IBookAuthorRepository extends CrudRepository<BookAuthor, BookAu
             FROM BookAuthor AS ba
             WHERE ba.id.book.id = :bookId
             """)
-    Boolean existsBookAuthorByBookId(@Param("bookId") Long id);
+    Optional<Boolean> existsBookAuthorByBookId(@Param("bookId") Long id);
 
     @Query("""
             SELECT CASE
@@ -614,7 +696,7 @@ public interface IBookAuthorRepository extends CrudRepository<BookAuthor, BookAu
             FROM BookAuthor AS ba
             WHERE ba.id.author.id = :authorId
             """)
-    Boolean existsBookAuthorByAuthorId(@Param("authorId") Long id);
+    Optional<Boolean> existsBookAuthorByAuthorId(@Param("authorId") Long id);
 
     @Modifying
     @Query("DELETE FROM BookAuthor AS ba WHERE ba.id.book.id = :bookId")
@@ -636,7 +718,7 @@ public interface IBookProjection {
 
     String getTitle();
 
-    @JsonFormat(pattern = "dd-MM-yyyy")
+    @JsonFormat(pattern = "dd/MM/yyyy")
     LocalDate getPublicationDate();
 
     Boolean getOnlineAvailability();

@@ -13,6 +13,6 @@ public interface IAuthorProjection {
 
     String getFullName();
 
-    @JsonFormat(pattern = "dd-MM-yyyy")
+    @JsonFormat(pattern = "dd/MM/yyyy")
     LocalDate getBirthdate();
 }

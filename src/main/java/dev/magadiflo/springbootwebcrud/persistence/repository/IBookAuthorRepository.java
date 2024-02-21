@@ -30,7 +30,7 @@ public interface IBookAuthorRepository extends CrudRepository<BookAuthor, BookAu
             FROM BookAuthor AS ba
             WHERE ba.id.book.id = :bookId
             """)
-    Boolean existsBookAuthorByBookId(@Param("bookId") Long id);
+    Optional<Boolean> existsBookAuthorByBookId(@Param("bookId") Long id);
 
     @Query("""
             SELECT CASE
@@ -40,7 +40,7 @@ public interface IBookAuthorRepository extends CrudRepository<BookAuthor, BookAu
             FROM BookAuthor AS ba
             WHERE ba.id.author.id = :authorId
             """)
-    Boolean existsBookAuthorByAuthorId(@Param("authorId") Long id);
+    Optional<Boolean> existsBookAuthorByAuthorId(@Param("authorId") Long id);
 
     @Modifying
     @Query("DELETE FROM BookAuthor AS ba WHERE ba.id.book.id = :bookId")
