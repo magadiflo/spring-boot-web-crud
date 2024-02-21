@@ -312,3 +312,352 @@ creado correctamente:
 
 ![database relationship](./assets/01.database-relationship.png)
 
+## Creando los repository
+
+Hasta el momento tenemos creado tres entidades `Author`, `Book` y la entidad que relaciona ambas entidades `BookAuthor`.
+Ahora, llega el momento de crear para cada una de ellas su respectivo `repository`:
+
+### IBookRepository
+
+Esta interfaz extiende a las interfaces propias de Spring Data, donde:
+
+- `CrudRepository`, es una interfaz que nos provee operaciones **CRUD** genéricas en un repositorio para un tipo
+  específico.
+- `PagingAndSortingRepository`, proporciona una abstracción útil para trabajar con operaciones de paginación y
+  ordenamiento en repositorios de datos. Fragmento del repositorio para proporcionar métodos para recuperar entidades
+  utilizando la abstracción de paginación y clasificación. **En muchos casos, esto se combinará con `CrudRepository` o
+  similar o con métodos agregados manualmente para proporcionar la funcionalidad CRUD.**
+
+````java
+public interface IBookRepository extends CrudRepository<Book, Long>, PagingAndSortingRepository<Book, Long> {
+}
+````
+
+### IAuthorRepository
+
+Esta interface extiende, por el momento, de la interfaz `PagingAndSortingRepository` otorgándonos la posibilidad de
+trabajar con operaciones de paginación y ordenamiento. Por otro lado, hemos definido varias consultas usando la
+anotación `@Query()`. **Todas las consultas creadas son nativas de `SQL`, he ahí la razón del uso
+de `nativeQuery = true` en cada anotación.**
+
+A continuación se muestra la interfaz `IAuthorRepository` junto a las consultas personalizadas:
+
+````java
+public interface IAuthorRepository extends PagingAndSortingRepository<Author, Long> {
+
+    /**
+     * @param id, es el id del author
+     * @return IAuthorProjection, interfaz donde se definieron métodos correspondientes a los campos
+     * devueltos en el select. (Ver tema de Projections)
+     */
+    @Query(value = """
+            SELECT a.id AS id, a.first_name AS firstName, a.last_name AS lastName,
+                    CONCAT(a.first_name, ' ' , a.last_name) AS fullName, a.birthdate AS birthdate
+            FROM authors AS a
+            WHERE a.id = :id
+            """, nativeQuery = true)
+    Optional<IAuthorProjection> findAuthorById(@Param("id") Long id);
+
+    /**
+     * @param author
+     * @return affected rows
+     */
+    @Modifying
+    @Query(value = """
+            INSERT INTO authors(first_name, last_name, birthdate)
+            VALUES(:#{#author.firstName}, :#{#author.lastName}, :#{#author.birthdate})
+            """, nativeQuery = true)
+    Integer saveAuthor(@Param("author") Author author);
+
+    /**
+     * @param author
+     * @return affected rows
+     */
+    @Modifying
+    @Query(value = """
+            UPDATE authors AS a
+            SET a.first_name = :#{#author.firstName}, a.last_name = :#{#author.lastName}, a.birthdate = :#{#author.birthdate}
+            WHERE a.id = :#{#author.id}
+            """, nativeQuery = true)
+    Integer updateAuthor(@Param("author") Author author);
+
+    /**
+     * @param id, es el id del author
+     * @return void
+     */
+    @Modifying
+    @Query(value = "DELETE FROM authors WHERE id = :id", nativeQuery = true)
+    void deleteAuthorById(@Param("id") Long id);
+}
+````
+
+**IMPORTANTE**
+
+> Toda consulta personalizada que modifique la base de datos `(INSERT, UPDATE, DELETE y declaraciones DDL)` debe tener
+> la anotación `@Modifying`. Indica que un método de consulta debe considerarse como una consulta de modificación, ya
+> que cambia la forma en que debe ejecutarse. Esta anotación solo se considera si se usa en métodos de consulta
+> definidos mediante la anotación `@Query`.
+
+Si observamos el método `findAuthorById`, vemos que está retornando un `Optional<IAuthorProjection>`, de esto nos
+interesa el término `Projection` ya que es el concepto que se está utilizando.
+
+Antes de seguir explicando lo realizado en este método, veamos **¿Qué son los projections?** explicado en la página
+oficial de `Spring`.
+
+### [Projections](https://docs.spring.io/spring-data/jpa/reference/repositories/projections.html)
+
+Los métodos de consulta de Spring Data generalmente devuelven una o varias instancias de la raíz agregada administrada
+por el repositorio. Sin embargo, **a veces puede resultar conveniente crear proyecciones basadas en ciertos atributos de
+esos tipos.** Spring Data permite modelar tipos de retorno dedicados para **recuperar de manera más selectiva vistas
+parciales** de los agregados administrados.
+
+Imagine un repositorio y un tipo de raíz agregada como el siguiente ejemplo:
+
+````java
+class Person {
+
+    @Id
+    UUID id;
+    String firstname, lastname;
+    Address address;
+
+    static class Address {
+        String zipCode, city, street;
+    }
+}
+
+interface PersonRepository extends Repository<Person, UUID> {
+
+    Collection<Person> findByLastname(String lastname);
+}
+````
+
+Ahora imagine que queremos recuperar únicamente los atributos del nombre de la persona. ¿Qué medios ofrece Spring Data
+para lograrlo? El resto de este capítulo responde a esa pregunta.
+
+### Proyecciones basadas en interfaz
+
+**La forma más sencilla de limitar el resultado de las consultas solo a los atributos de nombre es declarando una
+interfaz que exponga los métodos de acceso para que se lean las propiedades**, como se muestra en el siguiente ejemplo:
+
+Una interfaz de proyección para recuperar un subconjunto de atributos:
+
+````java
+interface NamesOnly {
+    String getFirstname();
+
+    String getLastname();
+}
+````
+
+Lo importante aquí es que **las propiedades definidas aquí coinciden exactamente con las propiedades en la raíz
+agregada.** Al hacerlo, se puede agregar un método de consulta de la siguiente manera:
+
+Un repositorio que utiliza una proyección basada en interfaz con un método de consulta:
+
+````java
+interface PersonRepository extends Repository<Person, UUID> {
+    Collection<NamesOnly> findByLastname(String lastname);
+}
+````
+
+El motor de ejecución de consultas crea instancias proxy de esa interfaz en tiempo de ejecución para cada elemento
+devuelto y reenvía llamadas a los métodos expuestos al objeto de destino.
+
+### Proyecciones cerradas
+
+Una interfaz de proyección cuyos métodos de acceso coinciden con las propiedades del agregado de destino se considera
+una proyección cerrada. El siguiente ejemplo (que también utilizamos anteriormente en este capítulo) es una proyección
+cerrada:
+
+````java
+interface NamesOnly {
+    String getFirstname();
+
+    String getLastname();
+}
+````
+
+Si utiliza una proyección cerrada, Spring Data puede optimizar la ejecución de la consulta, porque conocemos todos los
+atributos necesarios para respaldar el proxy de proyección.
+
+### Proyecciones abiertas
+
+Los métodos de acceso en las interfaces de proyección también se pueden utilizar para calcular nuevos valores mediante
+la anotación `@Value`, como se muestra en el siguiente ejemplo:
+
+````java
+interface NamesOnly {
+
+    @Value("#{target.firstname + ' ' + target.lastname}")
+    String getFullName();
+    /*...*/
+}
+````
+
+Una interfaz de proyección que utiliza @Value es una proyección abierta. Spring Data no puede aplicar optimizaciones de
+ejecución de consultas en este caso, porque la expresión SpEL podría usar cualquier atributo de la raíz agregada.
+
+Las expresiones utilizadas en @Value no deben ser demasiado complejas; desea evitar la programación en variables de
+cadena. Para expresiones muy simples, una opción podría ser recurrir a métodos predeterminados (introducidos en Java 8),
+como se muestra en el siguiente ejemplo:
+
+````java
+interface NamesOnly {
+
+    String getFirstname();
+
+    String getLastname();
+
+    default String getFullName() {
+        return getFirstname().concat(" ").concat(getLastname());
+    }
+}
+````
+
+Este enfoque requiere que usted pueda implementar lógica basada exclusivamente en los otros métodos de acceso expuestos
+en la interfaz de proyección.
+
+### Volviendo al IAuthorRepository
+
+Hasta este punto ya tenemos una idea de lo que son las proyecciones `(proyections)` y cómo es que las podemos crear
+para limitar el número de columnas que queremos recibir de la consulta.
+
+Recordemos que estuvimos analizando el siguiente método correspondiente a la interfaz de
+repositorio `IAuthorRepository`:
+
+````java
+public interface IAuthorRepository extends PagingAndSortingRepository<Author, Long> {
+
+    @Query(value = """
+            SELECT a.id AS id, a.first_name AS firstName, a.last_name AS lastName,
+                    CONCAT(a.first_name, ' ' , a.last_name) AS fullName, a.birthdate AS birthdate
+            FROM authors AS a
+            WHERE a.id = :id
+            """, nativeQuery = true)
+    Optional<IAuthorProjection> findAuthorById(@Param("id") Long id);
+
+    /* other methods */
+}
+
+````
+
+Como vemos, estamos haciendo uso de una proyección llamada `IAuthorProjection`:
+
+````java
+public interface IAuthorProjection {
+    Long getId();
+
+    String getFirstName();
+
+    String getLastName();
+
+    String getFullName();
+
+    @JsonFormat(pattern = "dd-MM-yyyy")
+    LocalDate getBirthdate();
+}
+````
+
+El objetivo de crear una proyección es limitar el número de columnas que deseamos obtener al momento de hacer la
+consulta, de esa manera evitamos que una consulta `SELECT` nos traiga todas las columnas correspondientes a una entidad.
+
+**IMPORTANTE**
+
+> En esta oportunidad, a modo de ejemplo, creamos la proyección `IAuthorProjection` con todos los campos que deseamos
+> recibir, eso significa que en la consulta `SELECT` debemos retornar cada uno de esos campos. Aunque en esta proyección
+> estamos retornando todos los campos, solo por el ejemplo, en una aplicación real, debemos limitarnos solo a los
+> campos necesarios.
+>
+> Además, podemos observar que esta proyección tiene el método `getFullName()`, que aunque no lo tengamos como propiedad
+> en la entidad `Author`, ese método estará mapeado dentro de la consulta `SELECT` a un campo calculado, que en nuestro
+> ejemplo sería al siguiente:<br>
+> `CONCAT(a.first_name, ' ' , a.last_name) AS fullName`
+
+### IBookAuthorRepository
+
+Este repositorio hereda únicamente de la interfaz `CrudRepository` donde definimos la entidad `BookAuthor` y su clave
+primaria, que a diferencia de las entidades `Book` y `Author` que tienen como clave primaria un tipo de dato `Long`,
+nuestra entidad `BookAuthor` tiene como clave primaria una `clave compuesta` que está definida en la
+clase `BookAuthorPK`.
+
+A continuación se muestra el repositorio `IBookAuthorRepository`:
+
+````java
+public interface IBookAuthorRepository extends CrudRepository<BookAuthor, BookAuthorPK> {
+    @Query(value = """
+            SELECT b.id AS id, b.title AS title, b.publication_date AS publicationDate, b.online_availability AS onlineAvailability,
+            	GROUP_CONCAT(CONCAT(a.first_name, ' ', a.last_name) SEPARATOR ', ') AS concatAuthors
+            FROM books AS b
+            	INNER JOIN books_authors AS ba ON(b.id = ba.book_id)
+            	INNER JOIN authors AS a ON(ba.author_id = a.id)
+            WHERE b.id = :bookId
+            GROUP BY b.id, b.title, b.publication_date, b.online_availability
+            """, nativeQuery = true)
+    Optional<IBookProjection> findBookAuthorByBookId(@Param("bookId") Long id);
+
+    @Query("""
+            SELECT CASE
+                        WHEN COUNT(ba.id.book.id) > 0 THEN true
+                        ELSE false
+                    END
+            FROM BookAuthor AS ba
+            WHERE ba.id.book.id = :bookId
+            """)
+    Boolean existsBookAuthorByBookId(@Param("bookId") Long id);
+
+    @Query("""
+            SELECT CASE
+                        WHEN COUNT(ba.id.author.id) > 0 THEN true
+                        ELSE false
+                    END
+            FROM BookAuthor AS ba
+            WHERE ba.id.author.id = :authorId
+            """)
+    Boolean existsBookAuthorByAuthorId(@Param("authorId") Long id);
+
+    @Modifying
+    @Query("DELETE FROM BookAuthor AS ba WHERE ba.id.book.id = :bookId")
+    Integer deleteBookAuthorByBookId(@Param("bookId") Long id);
+
+    @Modifying
+    @Query("DELETE FROM BookAuthor AS ba WHERE ba.id.author.id = :authorId")
+    Integer deleteBookAuthorByAuthorId(@Param("authorId") Long id);
+
+}
+````
+
+Lo primero que debemos observar es que el método `findBookAuthorByBookId` usa una consulta `SQL nativa` y además
+utiliza una proyección llamada `IBookProjection`:
+
+````java
+public interface IBookProjection {
+    Long getId();
+
+    String getTitle();
+
+    @JsonFormat(pattern = "dd-MM-yyyy")
+    LocalDate getPublicationDate();
+
+    Boolean getOnlineAvailability();
+
+    @JsonIgnore
+    String getConcatAuthors();
+
+    default List<String> getAuthors() {
+        if (getConcatAuthors() == null || getConcatAuthors().isEmpty()) {
+            return new ArrayList<>();
+        }
+        return Arrays.asList(getConcatAuthors().split(", "));
+    }
+}
+````
+
+Otro punto a observar del repositorio `IBookAuthorRepository` es que los métodos
+`existsBookAuthorByBookId, existsBookAuthorByAuthorId, deleteBookAuthorByBookId y deleteBookAuthorByAuthorId` son
+consultas realizadas en `JPQL`, es decir las consultas se realizaron usando los objetos de entidad, es por eso que
+podemos ver esta sintaxis, por ejemplo: `DELETE FROM BookAuthor AS ba WHERE ba.id.book.id = :bookId`, donde vemos el
+siguiente fragmento `ba.id.book.id`, en ese caso `ba` es el alias en la consulta de la entidad `BookAuthor`, el `.id`
+siguiente corresponde al `BookAuthorPK`, el `.book` corresponde al `Book` y finalmente el `.id` siguiente al atributo
+id definido dentro de la entidad `Book`.
+
