@@ -1095,3 +1095,85 @@ public class AuthorRestController {
     }
 }
 ````
+
+## Probando endpoints
+
+Realizamos pruebas a algunos endpoints de autores:
+
+````bash
+$ curl -v http://localhost:8080/api/v1/authors/2 | jq
+
+>
+< HTTP/1.1 200
+<
+{
+  "id": 2,
+  "fullName": "Carlos García",
+  "lastName": "García",
+  "birthdate": "25/05/1988",
+  "firstName": "Carlos"
+}
+````
+
+````bash
+$ curl -v http://localhost:8080/api/v1/authors/200 | jq
+
+>
+< HTTP/1.1 404
+<
+{
+  "message": "No existe el author buscado"
+}
+````
+
+````bash
+$ curl -v -X POST -H "Content-Type: application/json" -d "{\"firstName\": \"Rosa\", \"lastName\": \"Milagros\", \"birthdate\": \"25/12/1995\"}" http://localhost:8080/api/v1/authors | jq
+
+>
+< HTTP/1.1 201
+````
+
+````bash
+$ curl -v -X PUT -H "Content-Type: application/json" -d "{\"firstName\": \"Carlos\", \"lastName\": \"Vega\", \"birthdate\": \"25/09/1980\"}" http://localhost:8080/api/v1/authors/11 | jq
+
+>
+< HTTP/1.1 200
+<
+{
+  "message": "Registro actualizado",
+  "content": {
+    "id": 11,
+    "fullName": "Carlos Vega",
+    "lastName": "Vega",
+    "birthdate": "25/09/1980",
+    "firstName": "Carlos"
+  }
+}
+````
+
+Realizando pruebas a algunos endpoints de libros:
+
+````bash
+$  curl -v http://localhost:8080/api/v1/books/with-authors/1 | jq
+
+>
+< HTTP/1.1 200
+<
+{
+  "id": 1,
+  "title": "Spring Boot",
+  "authors": [
+    "Pepito Pérez",
+    "Percy Ruíz"
+  ],
+  "publicationDate": "20/02/2024",
+  "onlineAvailability": true
+}
+````
+
+````bash
+$ curl -v -X POST -H "Content-Type: application/json" -d "{\"title\": \"Habilidades blandas\", \"publicationDate\": \"22/02/2024\", \"onlineAvailability\": true, \"authorIdList\": [8,9,10]}" http://localhost:8080/api/v1/books/with-authors | jq
+
+>
+< HTTP/1.1 201
+````
