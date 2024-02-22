@@ -743,3 +743,246 @@ siguiente fragmento `ba.id.book.id`, en ese caso `ba` es el alias en la consulta
 siguiente corresponde al `BookAuthorPK`, el `.book` corresponde al `Book` y finalmente el `.id` siguiente al atributo
 id definido dentro de la entidad `Book`.
 
+## Definiendo DTOs
+
+Por buenas prácticas se debe usar `DTOs` para recibir información por los endpoints o enviar información a través de
+ellos. En nuestro caso, crearemos algunos dtos para tener en cuenta esta buena práctica:
+
+Creamos el `DTO RegisterAuthorDTO` usando un `record` de java:
+
+````java
+public record RegisterAuthorDTO(String firstName,
+                                String lastName,
+                                @JsonFormat(pattern = "dd/MM/yyyy") LocalDate birthdate) {
+}
+````
+
+Ahora, creamos un dto que contendrá información para actualizar. Aquí es importante observar que, tanto el dto
+`RegisterAuthorDTO` y el dto `UpdateAuthorDTO` tienen exactamente los mismos campos, entonces
+**¿por qué no reutilizamos el record de registro, así nos ahorramos una clase?**, bueno, por buenas prácticas, siempre
+es recomendable crear un dto para cada tipo de operación, porque si más adelante, por ejemplo, quisiéramos agregar
+un campo adicional al dto de registro, pero no al dto de actualización, entonces habría inconvenientes, ya que
+estaríamos usando la misma clase. Entonces, para evitar ese conflicto, y por buenas prácticas, es necesario que cada
+operación cuente con su propio clase dto:
+
+````java
+public record UpdateAuthorDTO(
+        String firstName,
+        String lastName,
+        @JsonFormat(pattern = "dd/MM/yyyy") LocalDate birthdate) {
+}
+````
+
+Crearemos un dto para trabajar con la información de la entidad Book. Solo crearemos este dto, ya que sería lo mismo
+si implementamos el endpoint de actualizar, también habría que crear un dto para ese proceso, pero en este caso,
+solo implementaremos el registrar:
+
+````java
+public record RegisterBookDTO(String title,
+                              @JsonFormat(pattern = "dd/MM/yyyy") LocalDate publicationDate,
+                              Boolean onlineAvailability,
+                              List<Long> authorIdList) {
+    // Constructor compacto
+    public RegisterBookDTO {
+        onlineAvailability = onlineAvailability != null && onlineAvailability;
+    }
+}
+````
+
+## Definiendo los Services
+
+Empezaremos con la definición de la interfaz `IAuthorService`:
+
+````java
+public interface IAuthorService {
+    IAuthorProjection findAuthorById(Long authorId);
+
+    Integer saveAuthor(RegisterAuthorDTO authorDTO);
+
+    IAuthorProjection updateAuthor(Long authorId, UpdateAuthorDTO authorDTO);
+
+    Optional<Boolean> deleteAuthorById(Long authorId);
+}
+````
+
+Ahora mostramos la implementación de dicha interfaz:
+
+````java
+
+@RequiredArgsConstructor
+@Slf4j
+@Service
+public class AuthorServiceImpl implements IAuthorService {
+
+    private final IAuthorRepository authorRepository;
+    private final IBookAuthorRepository bookAuthorRepository;
+    private final ModelMapper modelMapper;
+
+    @Override
+    @Transactional(readOnly = true)
+    public IAuthorProjection findAuthorById(Long authorId) {
+        return this.authorRepository.findAuthorById(authorId)
+                .orElseThrow(() -> new ApiException("No existe el author buscado", HttpStatus.NOT_FOUND));
+    }
+
+    @Override
+    @Transactional
+    public Integer saveAuthor(RegisterAuthorDTO authorDTO) {
+        Integer affectedRows = null;
+        try {
+            Author author = this.modelMapper.map(authorDTO, Author.class);
+            affectedRows = this.authorRepository.saveAuthor(author);
+        } catch (Exception e) {
+            log.error(e.getMessage());
+            throw new ApiException("No se pudo registrar al author", HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+        return affectedRows;
+    }
+
+    @Override
+    @Transactional
+    public IAuthorProjection updateAuthor(Long authorId, UpdateAuthorDTO authorDTO) {
+        return this.authorRepository.findAuthorById(authorId)
+                .map(authorProjectionDB -> {
+                    Author author = this.modelMapper.map(authorDTO, Author.class);
+                    author.setId(authorId);
+                    return author;
+                })
+                .map(this.authorRepository::updateAuthor)
+                .map(affectedRows -> this.authorRepository.findAuthorById(authorId).orElseThrow(() -> new ApiException("No se pudo encontrar al author actualizado", HttpStatus.NOT_FOUND)))
+                .orElseThrow(() -> new ApiException("No existe el author para actualizar", HttpStatus.NOT_FOUND));
+    }
+
+    @Override
+    @Transactional
+    public Optional<Boolean> deleteAuthorById(Long authorId) {
+        Optional<Boolean> existOptional = this.bookAuthorRepository.existsBookAuthorByAuthorId(authorId);
+
+        if (existOptional.isPresent()) {
+            this.bookAuthorRepository.deleteBookAuthorByAuthorId(authorId);
+        }
+
+        return Optional.ofNullable(this.authorRepository.findAuthorById(authorId)
+                .map(authorProjectionDB -> {
+                    this.authorRepository.deleteAuthorById(authorId);
+                    return true;
+                })
+                .orElseThrow(() -> new ApiException("Author no encontrado para su eliminación", HttpStatus.NOT_FOUND)));
+    }
+}
+````
+
+Ahora creamos la interfaz `IBookService`:
+
+````java
+public interface IBookService {
+    IBookProjection findBookById(Long bookId);
+
+    Long saveBook(RegisterBookDTO registerBookDTO);
+
+    Optional<Boolean> deleteBookById(Long bookId);
+}
+````
+
+Finalmente, creamos la implementación de dicha interfaz:
+
+````java
+
+@RequiredArgsConstructor
+@Slf4j
+@Service
+public class BookServiceImpl implements IBookService {
+
+    private final IBookRepository bookRepository;
+    private final IAuthorRepository authorRepository;
+    private final IBookAuthorRepository bookAuthorRepository;
+    private final ModelMapper modelMapper;
+
+    @Override
+    @Transactional(readOnly = true)
+    public IBookProjection findBookById(Long bookId) {
+        return this.bookAuthorRepository.findBookAuthorByBookId(bookId)
+                .orElseThrow(() -> new ApiException("No se encontró el ID del libro buscado", HttpStatus.NOT_FOUND));
+    }
+
+    /**
+     * @param registerBookDTO
+     * @return book id
+     */
+    @Override
+    @Transactional
+    public Long saveBook(RegisterBookDTO registerBookDTO) {
+        this.modelMapper.getConfiguration().setMatchingStrategy(MatchingStrategies.STRICT);
+
+        Book bookRequest = this.modelMapper.map(registerBookDTO, Book.class);
+        Book bookDB = this.bookRepository.save(bookRequest);
+
+        if (registerBookDTO.authorIdList() != null && !registerBookDTO.authorIdList().isEmpty()) {
+            Integer countOnDB = this.authorRepository.countAuthorsByIds(registerBookDTO.authorIdList());
+
+            if (registerBookDTO.authorIdList().size() != countOnDB) {
+                throw new ApiException("Hay id de autores que no están registrados en la BD", HttpStatus.NOT_FOUND);
+            }
+
+            registerBookDTO.authorIdList().stream().forEach(authorId -> {
+                Author author = Author.builder()
+                        .id(authorId)
+                        .build();
+
+                Book book = Book.builder()
+                        .id(bookDB.getId())
+                        .build();
+
+                BookAuthorPK bookAuthorPK = BookAuthorPK.builder()
+                        .author(author)
+                        .book(book)
+                        .build();
+
+                BookAuthor bookAuthor = BookAuthor.builder()
+                        .id(bookAuthorPK)
+                        .build();
+
+                this.bookAuthorRepository.save(bookAuthor);
+            });
+        }
+
+        return bookDB.getId();
+    }
+
+    @Override
+    @Transactional
+    public Optional<Boolean> deleteBookById(Long bookId) {
+        return Optional.ofNullable(this.bookRepository.findById(bookId)
+                .map(bookDB -> {
+                    Optional<Boolean> existsOptional = this.bookAuthorRepository.existsBookAuthorByBookId(bookDB.getId());
+                    if (existsOptional.isPresent()) {
+                        this.bookAuthorRepository.deleteBookAuthorByBookId(bookDB.getId());
+                    }
+                    this.bookRepository.delete(bookDB);
+                    return true;
+                })
+                .orElseThrow(() -> new ApiException("No existe el book con id a eliminar", HttpStatus.NOT_FOUND)));
+    }
+}
+````
+
+De la implementación anterior, observemos el método `saveBook`, en su interior estamos definiendo la siguiente línea de
+código:
+
+````
+this.modelMapper.getConfiguration().setMatchingStrategy(MatchingStrategies.STRICT);
+````
+
+La estrategia STRICT es una de las estrategias predefinidas proporcionadas por ModelMapper. Cuando se utiliza la
+estrategia STRICT, el mapeo requiere que todos los campos del objeto fuente tengan un campo correspondiente en el
+objeto destino con el mismo nombre y tipo. Si no encuentra una coincidencia exacta, el ModelMapper arrojará una
+excepción indicando que no se pudo realizar el mapeo.
+
+Al establecer la estrategia de coincidencia en STRICT, estás indicando que deseas un mapeo estricto y exacto entre los
+campos del objeto fuente y del objeto destino. Si no se puede encontrar una coincidencia exacta para un campo, el
+ModelMapper generará un error.
+
+Usé, esa configuración precisamente porque el `RegisterBookDTO` tiene el siguiente campo `List<Long> authorIdList`,
+mientras que la entidad `Book` tiene el campo `Long id`, entonces, lo que hacía el `modelMapper` antes de agregar
+la configuración, era tratar de mapear el campo `authorIdList -> id` y obviamente eso no se puede, ya que uno es una
+lista y el otro un solo campo. Por lo tanto, tuve que agregar la configuración `STRIC` para solucionar el problema.
