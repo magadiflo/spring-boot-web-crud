@@ -1020,3 +1020,78 @@ public class ApiAdvice {
 En este caso, con la anotación `@ExceptionHandler` vamos a capturar todas las excepciones que sean del tipo
 `ApiException`, que, como recordamos es una excepción personalizada que creamos, mismo que está siendo lanzado dentro
 de algunas capas de nuestra aplicación.
+
+## Definiendo controladores
+
+Empezamos creando el `RestController` para los libros:
+
+````java
+
+@RequiredArgsConstructor
+@Slf4j
+@RestController
+@RequestMapping(path = "/api/v1/books")
+public class BookRestController {
+
+    private final IBookService bookService;
+
+    @GetMapping(path = "/with-authors/{bookId}")
+    public ResponseEntity<IBookProjection> showBookWithAuthors(@PathVariable Long bookId) {
+        return ResponseEntity.ok(this.bookService.findBookAuthorByBookId(bookId));
+    }
+
+    @PostMapping(path = "/with-authors")
+    public ResponseEntity<Void> saveBookWithAuthors(@RequestBody RegisterBookDTO registerBookDTO) {
+        this.bookService.saveBookWithAuthorsIdList(registerBookDTO);
+        return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
+    @DeleteMapping(path = "/with-authors-list/{bookId}")
+    public ResponseEntity<Void> deleteBookWithAuthorsList(@PathVariable Long bookId) {
+        return this.bookService.deleteBookById(bookId)
+                .map(wasDeleted -> new ResponseEntity<Void>(HttpStatus.NO_CONTENT))
+                .orElseThrow();
+    }
+
+}
+````
+
+Finalmente, implementamos el rest controller para los autores:
+
+````java
+
+@RequiredArgsConstructor
+@Slf4j
+@RestController
+@RequestMapping(path = "/api/v1/authors")
+public class AuthorRestController {
+
+    private final IAuthorService authorService;
+
+    @GetMapping(path = "/{authorId}")
+    public ResponseEntity<IAuthorProjection> showAuthor(@PathVariable Long authorId) {
+        return ResponseEntity.ok(this.authorService.findAuthorById(authorId));
+    }
+
+    @PostMapping
+    public ResponseEntity<Void> saveAuthor(@RequestBody RegisterAuthorDTO registerAuthorDTO) {
+        this.authorService.saveAuthor(registerAuthorDTO);
+        return ResponseEntity.status(HttpStatus.CREATED).build();
+    }
+
+    @PutMapping(path = "/{authorId}")
+    public ResponseEntity<ResponseMessage<IAuthorProjection>> updateAuthor(@PathVariable Long authorId,
+                                                                           @RequestBody UpdateAuthorDTO updateAuthorDTO) {
+        IAuthorProjection authorProjection = this.authorService.updateAuthor(authorId, updateAuthorDTO);
+        ResponseMessage<IAuthorProjection> responseMessage = new ResponseMessage<>("Registro actualizado", authorProjection);
+        return ResponseEntity.ok(responseMessage);
+    }
+
+    @DeleteMapping(path = "/{authorId}")
+    public ResponseEntity<Void> deleteAuthor(@PathVariable Long authorId) {
+        return this.authorService.deleteAuthorById(authorId)
+                .map(wasDeleted -> new ResponseEntity<Void>(HttpStatus.NO_CONTENT))
+                .orElseThrow();
+    }
+}
+````
