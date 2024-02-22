@@ -876,9 +876,9 @@ Ahora creamos la interfaz `IBookService`:
 
 ````java
 public interface IBookService {
-    IBookProjection findBookById(Long bookId);
+    IBookProjection findBookAuthorByBookId(Long bookId);
 
-    Long saveBook(RegisterBookDTO registerBookDTO);
+    Long saveBookWithAuthorsIdList(RegisterBookDTO registerBookDTO);
 
     Optional<Boolean> deleteBookById(Long bookId);
 }
@@ -900,9 +900,10 @@ public class BookServiceImpl implements IBookService {
 
     @Override
     @Transactional(readOnly = true)
-    public IBookProjection findBookById(Long bookId) {
+    public IBookProjection findBookAuthorByBookId(Long bookId) {
         return this.bookAuthorRepository.findBookAuthorByBookId(bookId)
-                .orElseThrow(() -> new ApiException("No se encontró el ID del libro buscado", HttpStatus.NOT_FOUND));
+                .orElseThrow(() -> new ApiException("No hay relación entre Book y Author con el id del book proporcionado",
+                        HttpStatus.NOT_FOUND));
     }
 
     /**
@@ -911,7 +912,7 @@ public class BookServiceImpl implements IBookService {
      */
     @Override
     @Transactional
-    public Long saveBook(RegisterBookDTO registerBookDTO) {
+    public Long saveBookWithAuthorsIdList(RegisterBookDTO registerBookDTO) {
         this.modelMapper.getConfiguration().setMatchingStrategy(MatchingStrategies.STRICT);
 
         Book bookRequest = this.modelMapper.map(registerBookDTO, Book.class);

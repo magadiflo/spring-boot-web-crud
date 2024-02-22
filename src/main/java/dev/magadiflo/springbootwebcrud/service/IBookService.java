@@ -6,9 +6,9 @@ import dev.magadiflo.springbootwebcrud.model.projection.IBookProjection;
 import java.util.Optional;
 
 public interface IBookService {
-    IBookProjection findBookById(Long bookId);
+    IBookProjection findBookAuthorByBookId(Long bookId);
 
-    Long saveBook(RegisterBookDTO registerBookDTO);
+    Long saveBookWithAuthorsIdList(RegisterBookDTO registerBookDTO);
 
     Optional<Boolean> deleteBookById(Long bookId);
 }
