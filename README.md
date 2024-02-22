@@ -986,3 +986,36 @@ Usé, esa configuración precisamente porque el `RegisterBookDTO` tiene el sigui
 mientras que la entidad `Book` tiene el campo `Long id`, entonces, lo que hacía el `modelMapper` antes de agregar
 la configuración, era tratar de mapear el campo `authorIdList -> id` y obviamente eso no se puede, ya que uno es una
 lista y el otro un solo campo. Por lo tanto, tuve que agregar la configuración `STRIC` para solucionar el problema.
+
+## Definiendo estructura de mensaje de respuesta
+
+Antes de definir los controladores, vamos a crear un record que será usado para manejar un único formato cuando ocurra
+alguna excepción en la aplicación:
+
+````java
+public record ResponseMessage<T>(String message,
+                                 @JsonInclude(JsonInclude.Include.NON_NULL) T content) {
+}
+````
+
+La anotación `@JsonInclude(JsonInclude.Include.NON_NULL)` indica que si el valor de `content` es `null`, ese contenido
+no se agregará al `json` generado para la respuesta.
+
+Ahora creamos la clase `ApiAdvice` que será la que capture las excepciones que definamos en los métodos con la
+anotación `@ExceptionHandler`:
+
+````java
+
+@RestControllerAdvice
+public class ApiAdvice {
+    @ExceptionHandler(ApiException.class)
+    public ResponseEntity<ResponseMessage<Void>> apiException(ApiException apiException) {
+        ResponseMessage<Void> responseMessage = new ResponseMessage<>(apiException.getMessage(), null);
+        return ResponseEntity.status(apiException.getHttpStatus()).body(responseMessage);
+    }
+}
+````
+
+En este caso, con la anotación `@ExceptionHandler` vamos a capturar todas las excepciones que sean del tipo
+`ApiException`, que, como recordamos es una excepción personalizada que creamos, mismo que está siendo lanzado dentro
+de algunas capas de nuestra aplicación.
