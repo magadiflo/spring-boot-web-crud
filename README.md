@@ -1258,7 +1258,7 @@ La `Specification` ofrece algunos métodos predeterminados de “código adhesiv
 la `specification`. Estos métodos le permiten ampliar su capa de acceso a datos creando nuevas implementaciones de
 `Specification` y combinándolas con implementaciones ya existentes.
 
-### Trabajando con JpaSpecificationExecutor y los Specifications
+## Trabajando con JpaSpecificationExecutor y los Specifications
 
 En este apartado trabajaremos con los autores. Iniciaremos extendiendo el `JpaSpecificationExecutor` en la interfaz
 `IAuthorRepository`.
@@ -1483,5 +1483,129 @@ public class AuthorRestController {
 
         return ResponseEntity.ok(this.authorService.findAllToPage(condition1.and(condition2), pageable));
     }
+}
+````
+
+**NOTA**
+
+> Como observamos en el código anterior, estamos usando los `Specification` junto a la `paginación`, esto es importante,
+> ya que muchas veces queremos enviar los datos paginados en función a ciertas condiciones de búsqueda. Por ejemplo,
+> que retorne la lista paginada de los autores que cuyo nombre o apellido tenga palabra "SA".
+
+## Probando las especificaciones de Author
+
+````bash
+$ curl -v -G --data "q=Liz&birthdate=2024-02-21" http://localhost:8080/api/v1/authors/specifications | jq
+
+>
+< HTTP/1.1 200
+[
+  {
+    "id": 13,
+    "firstName": "Lizbeth",
+    "lastName": "Carbajal",
+    "birthdate": "2024-02-21"
+  },
+  {
+    "id": 14,
+    "firstName": "Lizita",
+    "lastName": "Carbajal",
+    "birthdate": "2024-02-21"
+  },
+  {
+    "id": 16,
+    "firstName": "Lizita",
+    "lastName": "Carbajal",
+    "birthdate": "2024-02-21"
+  }
+]
+````
+
+**IMPORTANTE**
+
+La consulta que se está haciendo usando `curl`, es como si por el navegador lo escribiéramos así:
+
+> `http://localhost:8080/api/v1/authors/specifications?q=Liz&birthdate=2024-02-21`
+
+Es decir, estamos usando `parámetros de consulta`, pero en la versión de curl que tengo no deja colocar los parámetros
+en la misma url, así que si usamos curl, debemos usar las siguientes banderas:
+
+> `-G --data "q=Liz&birthdate=2024-02-21"`
+
+**DONDE**
+
+- `-G`, es una opción que le dice a curl que convierta los datos proporcionados con --data en una cadena de consulta y
+  los adjunte a la URL. Esto es útil cuando se utiliza con solicitudes HTTP `GET`.
+- `--data "q=Liz&birthdate=2024-02-21"`, especifica los datos que se enviarán en la solicitud. En este caso, se
+  proporcionan dos parámetros: `q` con el valor "Liz" y `birthdate` con el valor "2024-02-21".
+
+````bash
+$ curl -v -G --data "q=erc&birthdate=2002-05-19" http://localhost:8080/api/v1/authors/specs | jq
+
+>
+< HTTP/1.1 200
+<
+[
+  {
+    "id": 4,
+    "firstName": "Percy",
+    "lastName": "Ruíz",
+    "birthdate": "2002-05-19"
+  },
+  {
+    "id": 12,
+    "firstName": "Mercy",
+    "lastName": "Gasco",
+    "birthdate": "2002-05-19"
+  }
+]
+````
+
+````bash
+curl -v -G --data "q=erc&birthdate=2002-05-19" http://localhost:8080/api/v1/authors/paginated | jq
+
+>
+< HTTP/1.1 200
+<
+{
+  "content": [
+    {
+      "id": 4,
+      "firstName": "Percy",
+      "lastName": "Ruíz",
+      "birthdate": "2002-05-19"
+    },
+    {
+      "id": 12,
+      "firstName": "Mercy",
+      "lastName": "Gasco",
+      "birthdate": "2002-05-19"
+    }
+  ],
+  "pageable": {
+    "pageNumber": 0,
+    "pageSize": 5,
+    "sort": {
+      "empty": false,
+      "unsorted": false,
+      "sorted": true
+    },
+    "offset": 0,
+    "paged": true,
+    "unpaged": false
+  },
+  "last": true,
+  "totalPages": 1,
+  "totalElements": 2,
+  "size": 5,
+  "number": 0,
+  "sort": {
+    "empty": false,
+    "unsorted": false,
+    "sorted": true
+  },
+  "numberOfElements": 2,
+  "first": true,
+  "empty": false
 }
 ````
