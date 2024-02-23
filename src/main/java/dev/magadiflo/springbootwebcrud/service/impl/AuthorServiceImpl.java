@@ -7,14 +7,19 @@ import dev.magadiflo.springbootwebcrud.model.projection.IAuthorProjection;
 import dev.magadiflo.springbootwebcrud.persistence.entity.Author;
 import dev.magadiflo.springbootwebcrud.persistence.repository.IAuthorRepository;
 import dev.magadiflo.springbootwebcrud.persistence.repository.IBookAuthorRepository;
+import dev.magadiflo.springbootwebcrud.persistence.repository.specification.AuthorSpecification;
 import dev.magadiflo.springbootwebcrud.service.IAuthorService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Optional;
 
 @RequiredArgsConstructor
@@ -76,5 +81,21 @@ public class AuthorServiceImpl implements IAuthorService {
                     return true;
                 })
                 .orElseThrow(() -> new ApiException("Author no encontrado para su eliminación", HttpStatus.NOT_FOUND)));
+    }
+
+    //----------- Se trabajaron con JpaSpecificationExecutor y Specification (API Criteria) ----------------------------
+    @Override
+    public List<IAuthorProjection> findAllAuthorWithSpecification(AuthorSpecification authorSpecification) {
+        return this.authorRepository.findAll(authorSpecification);
+    }
+
+    @Override
+    public List<IAuthorProjection> findAllAuthorWithSpecs(Specification<IAuthorProjection> authorSpecs) {
+        return this.authorRepository.findAll(authorSpecs);
+    }
+
+    @Override
+    public Page<IAuthorProjection> findAllToPage(Specification<IAuthorProjection> authorSpecs, Pageable pageable) {
+        return this.authorRepository.findAll(authorSpecs, pageable);
     }
 }

@@ -3,6 +3,7 @@ package dev.magadiflo.springbootwebcrud.persistence.repository;
 import dev.magadiflo.springbootwebcrud.model.projection.IAuthorProjection;
 import dev.magadiflo.springbootwebcrud.persistence.entity.Author;
 
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.PagingAndSortingRepository;
@@ -11,7 +12,7 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 import java.util.Optional;
 
-public interface IAuthorRepository extends PagingAndSortingRepository<Author, Long> {
+public interface IAuthorRepository extends PagingAndSortingRepository<Author, Long>, JpaSpecificationExecutor<IAuthorProjection> {
 
     /**
      * @param ids de los autores

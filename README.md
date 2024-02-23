@@ -1177,3 +1177,311 @@ $ curl -v -X POST -H "Content-Type: application/json" -d "{\"title\": \"Habilida
 >
 < HTTP/1.1 201
 ````
+
+## [JpaSpecificationExecutor y los Specifications (Criteria API)](https://docs.spring.io/spring-data/jpa/reference/jpa/specifications.html)
+
+### Specifications
+
+JPA 2 introduce una `API de criterios` que puede `utilizar para crear consultas mediante programación`. **Al escribir un
+criterio, define la cláusula `WHERE` de una consulta para una clase de dominio.** Dando un paso atrás, estos criterios
+pueden considerarse como un predicado sobre la entidad descrita por las restricciones de la `API de criterios de JPA`.
+
+Spring Data JPA toma el concepto de especificación del libro de Eric Evans, “Domain Driven Design”, siguiendo la misma
+semántica y proporcionando una API para definir dichas especificaciones con la `API de criterios de JPA`.
+**Para admitir especificaciones, puede ampliar la interfaz de su repositorio con la interfaz**
+`JpaSpecificationExecutor`, tal como se ve en el siguiente ejemplo:
+
+````java
+public interface CustomerRepository extends CrudRepository<Customer, Long>, JpaSpecificationExecutor<Customer> {
+}
+````
+
+La interfaz `JpaSpecificationExecutor` tiene métodos que le permiten ejecutar `specifications` de diversas formas.
+Por ejemplo, el método `findAll` devuelve todas las entidades que coinciden con la especificación, como se muestra en el
+siguiente ejemplo:
+
+````java
+List<T> findAll(Specification<T> spec);
+````
+
+La interfaz `Specification` se define de la siguiente manera:
+
+````java
+public interface Specification<T> {
+    Predicate toPredicate(Root<T> root, CriteriaQuery<?> query, CriteriaBuilder builder);
+}
+````
+
+Las especificaciones se pueden usar fácilmente para construir un conjunto extensible de predicados sobre una entidad que
+luego se puede combinar y usar con JpaRepository sin la necesidad de declarar una consulta (método) para cada
+combinación necesaria, como se muestra en el siguiente ejemplo:
+
+````java
+public class CustomerSpecs {
+
+    public static Specification<Customer> isLongTermCustomer() {
+        return (root, query, builder) -> {
+            LocalDate date = LocalDate.now().minusYears(2);
+            return builder.lessThan(root.get(Customer_.createdAt), date);
+        };
+    }
+
+    public static Specification<Customer> hasSalesOfMoreThan(MonetaryAmount value) {
+        return (root, query, builder) -> {
+            // build query here
+        };
+    }
+}
+````
+
+El tipo Customer_ es un tipo de metamodelo generado utilizando el generador de metamodelo JPA (consulte la documentación
+de la implementación de Hibernate para ver un ejemplo). Entonces, la expresión Customer_.createdAt supone que el Cliente
+tiene un atributo creado en el tipo Fecha. Además de eso, hemos expresado algunos criterios a nivel de abstracción de
+requisitos comerciales y hemos creado especificaciones ejecutables. Entonces un cliente podría usar una Especificación
+de la siguiente manera:
+
+````java
+List<Customer> customers = customerRepository.findAll(isLongTermCustomer());
+````
+
+¿Por qué no crear una consulta para este tipo de acceso a datos? El uso de una única especificación no genera muchos
+beneficios con respecto a una declaración de consulta simple. El poder de las especificaciones realmente brilla cuando
+las combinas para crear nuevos objetos de especificación. Puede lograr esto a través de los métodos predeterminados de
+`Specification` que proporcionamos para crear expresiones similares a las siguientes:
+
+````java
+MonetaryAmount amount = new MonetaryAmount(200.0, Currencies.DOLLAR);
+List<Customer> customers = customerRepository.findAll(isLongTermCustomer().or(hasSalesOfMoreThan(amount)));
+````
+
+La `Specification` ofrece algunos métodos predeterminados de “código adhesivo” para encadenar y combinar instancias de
+la `specification`. Estos métodos le permiten ampliar su capa de acceso a datos creando nuevas implementaciones de
+`Specification` y combinándolas con implementaciones ya existentes.
+
+### Trabajando con JpaSpecificationExecutor y los Specifications
+
+En este apartado trabajaremos con los autores. Iniciaremos extendiendo el `JpaSpecificationExecutor` en la interfaz
+`IAuthorRepository`.
+
+````java
+public interface IAuthorRepository extends PagingAndSortingRepository<Author, Long>, JpaSpecificationExecutor<IAuthorProjection> {
+    /* other code */
+}
+````
+
+`JpaSpecificationExecutor` es una interfaz genérica, por lo que estamos obligados a definirle un tipo de parámetro.
+En nuestro caso estamos creando un `JpaSpecificationExecutor` del tipo `IAuthorProjection`. Podríamos haber colocado
+el tipo `Author`, ya que es nuestra entidad de dominio, pero como la información obtenida la vamos enviar al cliente
+(navegador web), lo mejor sería usar una proyección.
+
+Ahora crearemos la `Specification` que usaremos en las consultas. En este caso en particular, he creado dos maneras de
+implementar la `specification`:
+
+1. **Mi propia implementación**: Aquí implemento en cada método un criterio de consulta que posteriormente pueden ser
+   utilizados de manera independiente o combinados.
+
+````java
+/**
+ * Esta clase es similar a la clase AuthorSpecification, solo que aquí definimos en
+ * cada método estático un criterio de consulta, que luego será usado en la clase
+ * que lo llame, mientras que en la clase AuthorSpecification implementamos la interfaz
+ * Specification y definimos dentro de su método toPredicate() los criterios de consulta.
+ */
+public class AuthorSpecs {
+
+    public static Specification<IAuthorProjection> fullNameContainsTheSearchedTerm(String q) {
+        return (root, query, criteriaBuilder) -> {
+            if (!StringUtils.hasText(q)) return null;
+            return criteriaBuilder.or(
+                    criteriaBuilder.like(root.get("firstName"), "%" + q + "%"),
+                    criteriaBuilder.like(root.get("lastName"), "%" + q + "%")
+            );
+        };
+    }
+
+    public static Specification<IAuthorProjection> isEqualToBirthdate(LocalDate birthdate) {
+        return (root, query, criteriaBuilder) -> {
+            if (birthdate == null) return null;
+            return criteriaBuilder.equal(root.get("birthdate"), birthdate);
+        };
+    }
+}
+````
+
+2. **Implementación del tutorial**: El criterio de consulta creado está dentro del método `toPredicate()`, en ese método
+   están definidos todos los criterios de consulta, que son similares a los que definí en el código anterior, pero en
+   este método toPredicate están unidos, mientras que en el código que implementé son independientes.
+
+````java
+
+/**
+ * Esta clase es similar a la clase AuthorSpecs donde implementamos
+ * de otra forma los criterios de consulta.
+ */
+
+@AllArgsConstructor
+@NoArgsConstructor
+@Builder
+@Data
+public class AuthorSpecification implements Specification<IAuthorProjection> {
+
+    private String q;
+    private LocalDate birthdate;
+
+    /**
+     * Crea una cláusula WHERE para una consulta de la entidad a la que se hace referencia en forma de predicado para
+     * la raíz y CriteriaQuery dados.
+     */
+    @Override
+    public Predicate toPredicate(Root<IAuthorProjection> root, CriteriaQuery<?> query, CriteriaBuilder criteriaBuilder) {
+
+        List<Predicate> predicatesOR = new ArrayList<>();
+        List<Predicate> predicatesAND = new ArrayList<>();
+
+        if (StringUtils.hasText(q)) {
+            Predicate firstNamePredicate = criteriaBuilder.like(root.get("firstName"), "%" + q + "%");
+            Predicate lastNamePredicate = criteriaBuilder.like(root.get("lastName"), "%" + q + "%");
+
+            predicatesOR.add(firstNamePredicate);
+            predicatesOR.add(lastNamePredicate);
+        }
+
+        if (birthdate != null) {
+            Predicate birthdatePredicate = criteriaBuilder.equal(root.get("birthdate"), this.birthdate);
+
+            predicatesAND.add(birthdatePredicate);
+        }
+
+        if (predicatesOR.isEmpty() && predicatesAND.isEmpty()) {
+            return null;
+        }
+
+        if (!predicatesOR.isEmpty() && !predicatesAND.isEmpty()) {
+            Predicate[] predicateArrayOR = predicatesOR.toArray(new Predicate[0]);
+            Predicate[] predicateArrayAND = predicatesAND.toArray(new Predicate[0]);
+
+            Predicate or = criteriaBuilder.or(predicateArrayOR);
+            Predicate and = criteriaBuilder.and(predicateArrayAND);
+
+            return criteriaBuilder.and(and, criteriaBuilder.or(or));
+        }
+
+        if (!predicatesOR.isEmpty()) {
+            Predicate[] predicateArrayOR = predicatesOR.toArray(new Predicate[0]);
+            return criteriaBuilder.or(predicateArrayOR);
+        }
+
+        Predicate[] predicateArrayAND = predicatesAND.toArray(new Predicate[0]);
+        return criteriaBuilder.and(predicateArrayAND);
+    }
+}
+````
+
+Hasta este punto se ha realizado lo más complicado ahora solo queda definir los métodos en la interfaz de servicio e
+implementarlos:
+
+````java
+public interface IAuthorService {
+    /* other methods */
+
+    /**
+     * Métodos para usar JpaSpecificationExecutor para la ejecución de Specification (API Criteria) para consultas
+     * dinámicas.
+     * <p>
+     * JpaSpecificationExecutor, interfaz para permitir la ejecución de Specifications basadas en la
+     * API de criterios JPA.
+     */
+    List<IAuthorProjection> findAllAuthorWithSpecification(AuthorSpecification authorSpecification);
+
+    List<IAuthorProjection> findAllAuthorWithSpecs(Specification<IAuthorProjection> authorSpecs);
+
+    Page<IAuthorProjection> findAllToPage(Specification<IAuthorProjection> authorSpecs, Pageable pageable);
+}
+````
+
+````java
+
+@RequiredArgsConstructor
+@Slf4j
+@Service
+public class AuthorServiceImpl implements IAuthorService {
+
+    private final IAuthorRepository authorRepository;
+    private final IBookAuthorRepository bookAuthorRepository;
+    private final ModelMapper modelMapper;
+
+    /* other methods */
+
+    //----------- Se trabajaron con JpaSpecificationExecutor y Specification (API Criteria) ----------------------------
+    @Override
+    public List<IAuthorProjection> findAllAuthorWithSpecification(AuthorSpecification authorSpecification) {
+        return this.authorRepository.findAll(authorSpecification);
+    }
+
+    @Override
+    public List<IAuthorProjection> findAllAuthorWithSpecs(Specification<IAuthorProjection> authorSpecs) {
+        return this.authorRepository.findAll(authorSpecs);
+    }
+
+    @Override
+    public Page<IAuthorProjection> findAllToPage(Specification<IAuthorProjection> authorSpecs, Pageable pageable) {
+        return this.authorRepository.findAll(authorSpecs, pageable);
+    }
+}
+````
+
+Finalmente, nos toca implementar el controlador, pero antes es necesario definir un record con el que pasaremos
+parámetros desde el cliente a nuestro endpoint:
+
+````java
+public record AuthorRequestParam(String q, LocalDate birthdate) {
+}
+````
+
+Implementando métodos del controlador:
+
+````java
+
+@RequiredArgsConstructor
+@Slf4j
+@RestController
+@RequestMapping(path = "/api/v1/authors")
+public class AuthorRestController {
+
+    private final IAuthorService authorService;
+
+    /* other methods */
+
+    //----------- Se trabajaron con JpaSpecificationExecutor y Specification (API Criteria) ----------------------------
+    @GetMapping(path = "/specifications")
+    public ResponseEntity<List<IAuthorProjection>> findAllAuthorWithSpecification(AuthorRequestParam authorRequestParam) {
+        AuthorSpecification authorSpecification = AuthorSpecification.builder()
+                .q(authorRequestParam.q())
+                .birthdate(authorRequestParam.birthdate())
+                .build();
+        return ResponseEntity.ok(this.authorService.findAllAuthorWithSpecification(authorSpecification));
+    }
+
+    @GetMapping(path = "/specs")
+    public ResponseEntity<List<IAuthorProjection>> findAllAuthorWithSpecs(AuthorRequestParam authorRequestParam) {
+        Specification<IAuthorProjection> condition1 = AuthorSpecs.isEqualToBirthdate(authorRequestParam.birthdate());
+        Specification<IAuthorProjection> condition2 = AuthorSpecs.fullNameContainsTheSearchedTerm(authorRequestParam.q());
+
+        return ResponseEntity.ok(this.authorService.findAllAuthorWithSpecs(condition1.and(condition2)));
+    }
+
+    @GetMapping(path = "/paginated")
+    public ResponseEntity<Page<IAuthorProjection>> findAllToPage(@RequestParam(name = "q", required = false) String q,
+                                                                 @DateTimeFormat(pattern = "dd/MM/yyyy") LocalDate birthdate,
+                                                                 @RequestParam(name = "pageNumber", defaultValue = "0", required = false) int pageNumber,
+                                                                 @RequestParam(name = "pageSize", defaultValue = "5", required = false) int pageSize,
+                                                                 @SortDefault(sort = "id", direction = Sort.Direction.ASC) Sort sort) {
+
+        Specification<IAuthorProjection> condition1 = AuthorSpecs.isEqualToBirthdate(birthdate);
+        Specification<IAuthorProjection> condition2 = AuthorSpecs.fullNameContainsTheSearchedTerm(q);
+        Pageable pageable = PageRequest.of(pageNumber, pageSize, sort);
+
+        return ResponseEntity.ok(this.authorService.findAllToPage(condition1.and(condition2), pageable));
+    }
+}
+````
