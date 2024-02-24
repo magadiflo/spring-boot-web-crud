@@ -1,6 +1,7 @@
 # [Spring Boot + Spring Data JPA | CRUD](https://www.youtube.com/watch?v=s7a9aVGxwxs)
 
-Tutorial tomado del canal de **Joas Dev**
+- Tutorial tomado del canal de **Joas Dev**
+- Aquí el [repositorio del tutorial](https://gitlab.com/JoasDev/spring-boot-crud-example)
 
 ---
 
